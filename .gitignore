@@ -1,3 +1,10 @@
+# contains wifi settings
+sdkconfig
+sdkconfig.old
+
+# Buildfiles
+build/
+
 # Prerequisites
 *.d
 
