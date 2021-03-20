@@ -9,6 +9,7 @@ https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/index.ht
 
 ## Setup
 clone this repository
+
 copy example config
 
 ``cd Software``
