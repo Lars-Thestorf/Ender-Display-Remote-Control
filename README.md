@@ -31,6 +31,10 @@ All encoder Pins are pulled up to 5V by the 3D printers MCU.
 A Transistor/Mosfet is used to pull them to Ground to simulate input.
 An additional resistor (1k) is used to protect Printer from high input current.
 
+![Image of the board connected to the Display Headers](Hardware/Hardware.jpg "Image of the board connected to the Display Headers")
+
+More Images are inside the hardware folder
+
 ## Documentation
 Ender 3 Pro uses a so called 12864 Display. The Display uses a ST7920 Driver in SPI configuration.
 Display only gets written to, never read by spi (no miso connected)
