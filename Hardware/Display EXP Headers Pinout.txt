@@ -1,0 +1,44 @@
+EXP Headers viewed from back of display 
+############       ############
+#                             #
+#    0    2    4    6    8    #
+#                             #
+#    1    3    5    7    9    #
+#                             #
+###############################
+
+EXP1
+0 = Encoder Button
+1 = Beeper
+2 = SPI CS
+3 = SPI MOSI
+4 = unknown
+5 = SPI SCK
+6 = unknown
+7 = unknown
+8 = VCC (5V)
+9 = GND
+
+EXP2
+0 = unknown
+1 = unknown
+2 = unknown
+3 = Encoder A
+4 = unknown
+5 = Encoder B
+6 = unknown
+7 = unknown
+8 = unknown
+9 = GND
+
+EXP3 (connected to printer mainboard)
+0 = GND
+1 = VCC (5V)
+2 = SPI CS
+3 = SPI MOSI
+4 = Encoder B
+5 = SPI SCK
+6 = Encoder A
+7 = Reset
+8 = Beeper
+9 = Encoder Button
