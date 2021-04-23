@@ -46,7 +46,7 @@ uint16_t spi_sniffer_sniff() {
             printf("SPI trans failed!\n");
             break;
         case ESP_OK:
-            printf("SPI trans success!\n");
+            //printf("SPI trans success!\n");
             break;
     }
     return trans.trans_len;

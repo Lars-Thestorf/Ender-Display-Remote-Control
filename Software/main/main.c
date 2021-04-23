@@ -10,6 +10,8 @@
 
 #include "spi_sniffer.h"
 #include "wifi_sta.h"
+#include "printerinput.h"
+#include "printerdisplay.h"
 
 #include "lwip/err.h"
 #include "lwip/sys.h"
@@ -19,19 +21,12 @@
 #define INV_IN 32
 #define INV_OUT 27
 
-#define EN_A 4
-#define EN_B 13
-#define EN_BTN 23
-
 #define TLEN 2048
 WORD_ALIGNED_ATTR uint8_t spi_buffer[TLEN];
 
-uint8_t displaybuffer[4][256];
-bool displayupdated = false;
-
 /* A simple example that demonstrates using websocket echo server
  */
-static const char *TAG = "PrinterDisplayReader";
+static const char *TAG = "PDR"; //PrinterDisplayReader
 
 /*
  * Structure holding server handle
@@ -48,7 +43,7 @@ struct async_resp_arg {
  */
 static void ws_async_send(void *arg)
 {
-    static const uint8_t * data = displaybuffer[0];
+    uint8_t * data = printerDisplayDataStart();
     struct async_resp_arg *resp_arg = arg;
     httpd_handle_t hd = resp_arg->hd;
     int fd = resp_arg->fd;
@@ -69,42 +64,18 @@ static esp_err_t trigger_async_send(httpd_handle_t handle, httpd_req_t *req)
     return httpd_queue_work(handle, ws_async_send, resp_arg);
 }
 
-void actionLeft() {
-	gpio_set_level(EN_A, 1);
-	vTaskDelay(10 / portTICK_PERIOD_MS);
-	gpio_set_level(EN_B, 1);
-	vTaskDelay(10 / portTICK_PERIOD_MS);
-	gpio_set_level(EN_A, 0);
-	vTaskDelay(10 / portTICK_PERIOD_MS);
-	gpio_set_level(EN_B, 0);
-}
-void actionRight() {
-	gpio_set_level(EN_B, 1);
-	vTaskDelay(10 / portTICK_PERIOD_MS);
-	gpio_set_level(EN_A, 1);
-	vTaskDelay(10 / portTICK_PERIOD_MS);
-	gpio_set_level(EN_B, 0);
-	vTaskDelay(10 / portTICK_PERIOD_MS);
-	gpio_set_level(EN_A, 0);
-}
-void actionClick() {
-	gpio_set_level(EN_BTN, 1);
-	vTaskDelay(10 / portTICK_PERIOD_MS);
-	gpio_set_level(EN_BTN, 0);
-}
-
 /*
  * This handler echos back the received ws data
  * and triggers an async send if certain message received
  */
-static esp_err_t echo_handler(httpd_req_t *req)
+static esp_err_t ws_handler(httpd_req_t *req)
 {
-    uint8_t buf[128] = { 0 };
+    uint8_t buf[16] = { 0 };
     httpd_ws_frame_t ws_pkt;
     memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
     ws_pkt.payload = buf;
     ws_pkt.type = HTTPD_WS_TYPE_TEXT;
-    esp_err_t ret = httpd_ws_recv_frame(req, &ws_pkt, 128);
+    esp_err_t ret = httpd_ws_recv_frame(req, &ws_pkt, 16);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "httpd_ws_recv_frame failed with %d", ret);
         return ret;
@@ -116,15 +87,15 @@ static esp_err_t echo_handler(httpd_req_t *req)
 			return trigger_async_send(req->handle, req);
 		}
 		if (strcmp((char*)ws_pkt.payload,"action left") == 0) {
-			actionLeft();
+			printerInputLeft();
 			ESP_LOGI(TAG, "left command");
 		}
 		if (strcmp((char*)ws_pkt.payload,"action right") == 0) {
-			actionRight();
+			printerInputRight();
 			ESP_LOGI(TAG, "right command");
 		}
 		if (strcmp((char*)ws_pkt.payload,"action click") == 0) {
-			actionClick();
+			printerInputClick();
 			ESP_LOGI(TAG, "click command");
 		}
 	}
@@ -149,7 +120,7 @@ static esp_err_t js_handler(httpd_req_t *req){
 static const httpd_uri_t ws = {
         .uri        = "/ws",
         .method     = HTTP_GET,
-        .handler    = echo_handler,
+        .handler    = ws_handler,
         .user_ctx   = NULL,
         .is_websocket = true
 };
@@ -240,18 +211,8 @@ void app_main(void)
     gpio_set_direction(INV_OUT, GPIO_MODE_OUTPUT);
     gpio_matrix_out(INV_OUT, SIG_IN_FUNC224_IDX, true, false);
 	
-	gpio_reset_pin(EN_A);
-	gpio_set_direction(EN_A, GPIO_MODE_OUTPUT);
-	gpio_set_level(EN_A, 0);
-	gpio_pullup_dis(EN_A);
-	gpio_reset_pin(EN_B);
-	gpio_set_direction(EN_B, GPIO_MODE_OUTPUT);
-	gpio_set_level(EN_B, 0);
-	gpio_pullup_dis(EN_B);
-	gpio_reset_pin(EN_BTN);
-	gpio_set_direction(EN_BTN, GPIO_MODE_OUTPUT);
-	gpio_set_level(EN_BTN, 0);
-	gpio_pullup_dis(EN_BTN);
+	printerInputInit();
+	printerDisplayInit();
 
     static httpd_handle_t server = NULL;
 
@@ -276,53 +237,92 @@ void app_main(void)
 
     while (1) {
         uint16_t length = spi_sniffer_sniff();
-		printf("len: %d\n", length);
-        if (length == 4864 || length == 4865) { //Mainboard 4.2.7 somehow transmits one bit more
-			if((spi_buffer[0] & 0xF8) == 0xF8) { //transmission is perfectly in sync
-				if((spi_buffer[1] == 0x80 || spi_buffer[1] == 0x90) && (spi_buffer[4] == 0x00 || spi_buffer[4] == 0x80)){
-					int section = (spi_buffer[1] == 0x90) | (spi_buffer[4] == 0x80) << 1;
-					printf("%d\n", section);
-					int rowdataoffset = 6;
-					for(int row=0; row < 16; row++) {
-						for(int rowbytes = 0; rowbytes < 16; rowbytes++) {
-							displaybuffer[section][row*16 + rowbytes] = 
-								((spi_buffer[rowdataoffset+rowbytes*2] & 0xF0) | 
-								(spi_buffer[(rowdataoffset+rowbytes*2)+1] & 0xF0) >> 4);
+		//printf("len: %d\n", length);
+		bool print_buffer = false;
+		uint16_t spi_pointer = 0;
+		while(spi_pointer < length / 8) {
+			//find start of transaction
+			if((spi_buffer[spi_pointer] & 0xF8) == 0xF8) { //transmission is perfectly in sync
+				spi_pointer++;
+				bool mode_data = false;
+				while(spi_pointer < length / 8) {
+					if (spi_buffer[spi_pointer] == 0xF8){
+						mode_data = false;
+						spi_pointer++;
+					}
+					if (spi_buffer[spi_pointer] == 0xFA){
+						mode_data = true;
+						spi_pointer++;
+					}
+					if (mode_data == false) { //command mode
+						if(((spi_buffer[spi_pointer] & 0x80) == 0x80) && ((spi_buffer[spi_pointer+2] & 0x80) == 0x80)) { // command: SET GRAPHIC RAM ADDR.
+							uint8_t vert_addr = (spi_buffer[spi_pointer] & ~0x80) | (spi_buffer[spi_pointer+1] >> 4);
+							uint8_t hor_addr = (spi_buffer[spi_pointer+3] >> 4);
+							printerDisplaySetAddr(vert_addr, hor_addr);
+							spi_pointer += 4;
+						} else {
+							printf("uc!\n");
+							spi_pointer++;
+							print_buffer = true;
 						}
-						rowdataoffset += 38;
+					} else { //data mode
+						uint8_t data = spi_buffer[spi_pointer] | (spi_buffer[spi_pointer+1] >> 4);
+						printerDisplayWrite(data);
+						spi_pointer += 2;
 					}
-					if (section == 3){
-						displayupdated = true;
-						broadcast_frame(server);
-					}
-				} else {
-					printf("unknown section: %x %x %x %x %x\n", spi_buffer[0], spi_buffer[1], spi_buffer[2], spi_buffer[3], spi_buffer[4]);
 				}
-			} else if((spi_buffer[0] & 0xF8>>1) == 0xF8>>1) { //transmission is one bit off, can be caused by slow reaction to CS signal, but is luckily not a huge problem at all
-				if((spi_buffer[1] == 0x80>>1 || spi_buffer[1] == 0x90>>1) && (spi_buffer[4] == 0x00>>1 || spi_buffer[4] == 0x80>>1)){
-					int section = (spi_buffer[1] == 0x90>>1) | (spi_buffer[4] == 0x80>>1) << 1;
-					printf("%d\n", section);
-					int rowdataoffset = 6;
-					for(int row=0; row < 16; row++) {
-						for(int rowbytes = 0; rowbytes < 16; rowbytes++) {
-							displaybuffer[section][row*16 + rowbytes] = 
-								(
-									((spi_buffer[rowdataoffset+rowbytes*2] & 0xF0>>1)<<1) | 
-									(spi_buffer[(rowdataoffset+rowbytes*2)+1] & 0xF0>>1) >> 3
-								);
+			} else if((spi_buffer[spi_pointer] & 0xF8>>1) == 0xF8>>1) { //transmission is one bit off, but is luckily not a huge problem at all
+				spi_pointer++;
+				bool mode_data = false;
+				while(spi_pointer < length / 8) {
+					if (spi_buffer[spi_pointer] == 0xF8>>1){
+						mode_data = false;
+						spi_pointer++;
+					}
+					if (spi_buffer[spi_pointer] == 0xFA>>1){
+						mode_data = true;
+						spi_pointer++;
+					}
+					if (mode_data == false) { //command mode
+						if(((spi_buffer[spi_pointer] & 0x80>>1) == 0x80>>1) && ((spi_buffer[spi_pointer+2] & 0x80>>1) == 0x80>>1)) { // command: SET GRAPHIC RAM ADDR.
+							uint8_t vert_addr = ((spi_buffer[spi_pointer] & ~(0x80>>1))<<1) | (spi_buffer[spi_pointer+1] >> 3);
+							uint8_t hor_addr = (spi_buffer[spi_pointer+3] >> 3);
+							printerDisplaySetAddr(vert_addr, hor_addr);
+							spi_pointer += 4;
+						} else {
+							printf("uc!\n");
+							spi_pointer++;
+							print_buffer = true;
 						}
-						rowdataoffset += 38;
+					} else { //data mode
+						uint8_t data = (spi_buffer[spi_pointer]<<1) | (spi_buffer[spi_pointer+1] >> 3);
+						printerDisplayWrite(data);
+						spi_pointer += 2;
 					}
-					if (section == 3){
-						displayupdated = true;
-						broadcast_frame(server);
-					}
-				} else {
-					printf("unknown section: %x %x %x %x %x\n", spi_buffer[0], spi_buffer[1], spi_buffer[2], spi_buffer[3], spi_buffer[4]);
 				}
 			} else {
-				printf("corruptded data: %x %x %x %x %x\n", spi_buffer[0], spi_buffer[1], spi_buffer[2], spi_buffer[3], spi_buffer[4]);
+				if (spi_pointer < 38) { //one row of display takes 38 bytes in spi transaction
+					spi_pointer++;
+				} else {
+					print_buffer = true;
+					break;
+				}
 			}
-        }
+		}
+		if (print_buffer) {
+			uint16_t spi_pointer = 0;
+			while(spi_pointer < length / 8) {
+				printf("%02X ", spi_buffer[spi_pointer]);
+				spi_pointer++;
+				if (spi_pointer % 38 == 0) {
+					printf("\n");
+				}
+			}
+			printf("----\n");
+		}
+		if (printerDisplayIsUpdated()) {
+			broadcast_frame(server);
+			printerDisplayClearUpdate();
+		}
     }
 }
