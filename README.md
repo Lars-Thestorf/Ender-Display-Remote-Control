@@ -3,6 +3,8 @@ Adds wifi remote control ability to stock Creality 3D Printers using an ESP32 Mi
 
 ESP32 will read and interpret SPI Messages to the Display and host a Webpage to view the content
 
+![Screenshot of Webpage](Screenshot.png "Screenshot of Webpage")
+
 ## Prerequirements
 Install esp-idf
 https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/index.html#get-started-get-esp-idf
@@ -21,7 +23,8 @@ Enter your wifi credentials with
 ``idf.py menuconfig``
 
 ## Hardware
-No Hardware modifications are nessesary. All required pins for reading SPI signals and simulating input on rotary encoder are also routed out to EXP1 and EXP2 Header. 
+No Hardware modifications are nessesary. All required pins for reading SPI signals and simulating input on rotary encoder are also routed out to EXP1 and EXP2 Header.
+
 As the Ender 3D Printers are 5V Systems and the ESP32 is running on 3.3V some extra Components are required.
 All SPI signals use a voltage divider (3.3k and 6.8k) to drop the voltage level to 3.3V.
 All encoder Pins are pulled up to 5V by the 3D printers MCU.
